@@ -1,4 +1,6 @@
 import argparse
+import json
+import os
 import time
 from pathlib import Path
 
@@ -57,7 +59,10 @@ def detect(save_img=False):
         dataset = LoadImages(source, img_size=imgsz, stride=stride)
 
     # Get names and colors
-    names = model.module.names if hasattr(model, 'module') else model.names
+    if os.path.isfile(opt.labels_file):
+        names = tuple(e.strip() for e in open(opt.labels_file).readlines())
+    else:
+        names = model.module.names if hasattr(model, 'module') else model.names
     colors = [[random.randint(0, 255) for _ in range(3)] for _ in names]
 
     # Run inference
@@ -67,6 +72,9 @@ def detect(save_img=False):
     old_img_b = 1
 
     t0 = time.time()
+    js = {}
+    print(names)
+    #with open("yolov7.names", "w") as f: f.writelines(f"{line:s}\n" for line in names)
     for path, img, im0s, vid_cap in dataset:
         img = torch.from_numpy(img).to(device)
         img = img.half() if half else img.float()  # uint8 to fp16/32
@@ -97,6 +105,7 @@ def detect(save_img=False):
             pred = apply_classifier(pred, modelc, img, im0s)
 
         # Process detections
+        #print(len(pred))
         for i, det in enumerate(pred):  # detections per image
             if webcam:  # batch_size >= 1
                 p, s, im0, frame = path[i], '%g: ' % i, im0s[i].copy(), dataset.count
@@ -104,12 +113,29 @@ def detect(save_img=False):
                 p, s, im0, frame = path, '', im0s, getattr(dataset, 'frame', 0)
 
             p = Path(p)  # to Path
+
+            print(str(p))
             save_path = str(save_dir / p.name)  # img.jpg
             txt_path = str(save_dir / 'labels' / p.stem) + ('' if dataset.mode == 'image' else f'_{frame}')  # img.txt
             gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
+            print("Image ", str(p), im0.shape, len(pred))
+
+            bbs = []
             if len(det):
                 # Rescale boxes from img_size to im0 size
                 det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
+                #print(det)
+                #print(det.unique())
+                for d in det:
+                    print(d)
+                    bb = {
+                        "class_id": int(d[-1]),
+                        "name": names[int(d[-1])],
+                        "confidence": float(d[-2]),
+                        "bbox": [int(i) for i in d[:4]
+                        ]
+                    }
+                    bbs.append(bb)
 
                 # Print results
                 for c in det[:, -1].unique():
@@ -128,6 +154,7 @@ def detect(save_img=False):
                         label = f'{names[int(cls)]} {conf:.2f}'
                         plot_one_box(xyxy, im0, label=label, color=colors[int(cls)], line_thickness=1)
 
+            js[str(p.name)] = {"objects": bbs}
             # Print time (inference + NMS)
             print(f'{s}Done. ({(1E3 * (t2 - t1)):.1f}ms) Inference, ({(1E3 * (t3 - t2)):.1f}ms) NMS')
 
@@ -160,6 +187,8 @@ def detect(save_img=False):
         s = f"\n{len(list(save_dir.glob('labels/*.txt')))} labels saved to {save_dir / 'labels'}" if save_txt else ''
         #print(f"Results saved to {save_dir}{s}")
 
+    with open(str(save_dir / "results.json"), mode="w", newline="") as fout:
+        json.dump(js, fout, indent=2)
     print(f'Done. ({time.time() - t0:.3f}s)')
 
 
@@ -183,6 +212,7 @@ if __name__ == '__main__':
     parser.add_argument('--name', default='exp', help='save results to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--no-trace', action='store_true', help='don`t trace model')
+    parser.add_argument('--labels-file', default='', help='labels file')
     opt = parser.parse_args()
     print(opt)
     #check_requirements(exclude=('pycocotools', 'thop'))
@@ -194,3 +224,8 @@ if __name__ == '__main__':
                 strip_optimizer(opt.weights)
         else:
             detect()
+
+
+# Run example:
+#python ../src/detect.py --save-txt --save-conf --conf-thres 0.25 --iou-thres 0.65 --project yv7_orig/es_images --name py --weights ../weights/yolov7.pt --source /home/cfati/Work/Dev/Projects/Everseen/TechAccelerators/Qualcomm/AIC100/models/chk_gen_int/24q1sco_v0/images/alamo/val4
+
