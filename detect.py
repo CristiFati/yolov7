@@ -75,7 +75,8 @@ def detect(save_img=False):
     js = {}
     print(names)
     #with open("yolov7.names", "w") as f: f.writelines(f"{line:s}\n" for line in names)
-    for path, img, im0s, vid_cap in dataset:
+    idx = 0
+    for idx, (path, img, im0s, vid_cap) in enumerate(dataset):
         img = torch.from_numpy(img).to(device)
         img = img.half() if half else img.float()  # uint8 to fp16/32
         img /= 255.0  # 0 - 255 to 0.0 - 1.0
@@ -183,6 +184,9 @@ def detect(save_img=False):
                         vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
                     vid_writer.write(im0)
 
+        if idx >= opt.max_files > 0:
+            print("Max files reached. Stop")
+            break
     if save_txt or save_img:
         s = f"\n{len(list(save_dir.glob('labels/*.txt')))} labels saved to {save_dir / 'labels'}" if save_txt else ''
         #print(f"Results saved to {save_dir}{s}")
@@ -213,6 +217,7 @@ if __name__ == '__main__':
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--no-trace', action='store_true', help='don`t trace model')
     parser.add_argument('--labels-file', default='', help='labels file')
+    parser.add_argument('--max-files', default=0, help='max files to process')
     opt = parser.parse_args()
     print(opt)
     #check_requirements(exclude=('pycocotools', 'thop'))
